@@ -127,3 +127,6 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+encoder-rotary/IRQ-rotary-encoder.py
+encoder-rotary/MIRQ-rotary-encoder-MQTT.py
+encoder-rotary/MIRQ-rotary-encoder.py
