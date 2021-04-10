@@ -130,3 +130,13 @@ dmypy.json
 encoder-rotary/IRQ-rotary-encoder.py
 encoder-rotary/MIRQ-rotary-encoder-MQTT.py
 encoder-rotary/MIRQ-rotary-encoder.py
+zEncoder.py
+zIRQencoder.py
+zencoder-rotary/IRQ-rotary-encoder.py
+zencoder-rotary/MIRQ-rotary-encoder-MQTT.py
+zencoder-rotary/MIRQ-rotary-encoder.py
+zencoder-rotary/rotary-encoder.py
+ztest-files/IRQ-rotary-encoder.py
+ztest-files/MIRQ-rotary-encoder-MQTT.py
+ztest-files/rotary-encoder.py
+ztest-files/MIRQ-rotary-encoder.py

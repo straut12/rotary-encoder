@@ -3,6 +3,7 @@
 # noise threshold then the voltage from all channels will be returned.
 # MQTT version has a publish section in the main code to test MQTT ability stand alone
 import sys, json, logging
+import RPi.GPIO as GPIO
 from time import sleep
 import paho.mqtt.client as mqtt
 from os import path
@@ -20,6 +21,15 @@ if __name__ == "__main__":
             return False
         else:
             return float(n).is_integer()
+
+    ''' alternative integer check
+    def is_integer_num(n):
+        if isinstance(n, int):
+            return True
+        if isinstance(n, float):
+            return n.is_integer()
+        return False
+    '''
 
     logging.basicConfig(level=logging.DEBUG) # Set to CRITICAL to turn logging off. Set to DEBUG to get variables. Set to INFO for status messages.
 
@@ -97,12 +107,22 @@ if __name__ == "__main__":
         sys.exit()
 
     # MQTT setup is successful. Initialize dictionaries and start the main loop.
-    rotEnc1 = rotaryencoder.RotaryEncoder(17, 27) # clock and data pin
-    outgoingD = {}
-    incomingD = {}
+    # Using BCM GPIO number for pins
+    clkPin, dtPin, button = 17, 27, 24
+    rotEnc1 = rotaryencoder.RotaryEncoder(clkPin, dtPin, button)
+    outgoingD, incomingD= {}, {}
     newmsg = True
-    while True:
-        clicks = rotEnc1.runencoder()  
-        if is_integer(clicks):            
-            outgoingD = {"RotEnc1i":str(clicks)}
-            mqtt_client.publish(MQTT_PUB_TOPIC1, json.dumps(outgoingD))       # publish encoder value
+    try:
+        while True:
+            clicks, buttonstate = rotEnc1.runencoder()
+            if is_integer(clicks):
+                outgoingD = {"RotEnc1Ci":str(clicks), "RotEnc1Bi":str(buttonstate)}
+                mqtt_client.publish(MQTT_PUB_TOPIC1, json.dumps(outgoingD))
+                logging.info("clicks: {0} Button: {1}".format(clicks, buttonstate))
+    except KeyboardInterrupt:
+        logging.info("Pressed ctrl-C")
+    #except:
+    #  logging.info("Exception occurred")
+    finally:
+        GPIO.cleanup()
+        logging.info("GPIO cleaned up")
