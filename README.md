@@ -3,7 +3,7 @@
 # [STEM Just 4 U Home Page](https://stemjust4u.com/)
 ## This project involves listening for when an incremental rotary encoder knob is turned along with detecting a button press. 
 
-You won't know the absolute position, a potentiometer or absolute encoder is better for that, but you can detect the direction and change in position.  (A rotary encoder give digital output vs the analog output of a potentiometer )The unique part of a rotary encoder knob is that you have infinite rotation and high precision, you can count each click when the knob is turned. Possible applications are sending a servo position, motor speed, volume, etc. 
+You won't know the absolute position, a potentiometer or absolute encoder is better for that, but you can detect the direction and change in position.  (A rotary encoder gives digital output vs the analog output of a potentiometer )The unique part of a rotary encoder knob is that you have infinite rotation and high precision, you can count each click when the knob is turned. Possible applications are sending a servo position, motor speed, volume, etc. 
 
 [Link to Project Web Site](https://github.com/stemjust4u/RotaryEncoder)  
 
