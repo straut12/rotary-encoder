@@ -58,8 +58,7 @@ if __name__ == "__main__":
   sleep(1)
   led.value(0)  # flash led to know main loop starting
   
-  outgoingD = {}
-  incomingD = {}
+  outgoingD, incomingD = {}, {}
   newmsg = True
   clkPin, dtPin, button = 18, 5, 4
   rotEnc1 = RotaryEncoder(clkPin, dtPin, button)

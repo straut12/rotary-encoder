@@ -3,7 +3,7 @@
 Pass the pins the clk/dt and button are connected to. Records the position of the button
 both CW and CCW. Starts at 0 and increments by 1 or -1.
 
-Returns two integers, the position of the knob and the state of the button, 0 or 1.
+Returns two integers: (1) the position of the knob and (2) the state of the button, 0 or 1.
 
 '''
 
@@ -43,6 +43,9 @@ class RotaryEncoder:
     else:
       return "na", "na"
 
+  def cleanupGPIO(self):
+    GPIO.cleanup()
+  
   def button_callback(self, channel):
     self.buttonpressed = True
 
@@ -73,9 +76,7 @@ if __name__ == "__main__":
         logging.info("clicks: {0} Button: {1}".format(clicks, buttonstate))
   except KeyboardInterrupt:
     logging.info("Pressed ctrl-C")
-  #except:
-  #  logging.info("Exception occurred")
   finally:
-    GPIO.cleanup()
+    rotEnc1.cleanupGPIO()
     logging.info("GPIO cleaned up")
 
