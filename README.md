@@ -1,127 +1,161 @@
 <link rel="stylesheet" href="./images/sj4u.css"></link>
 
 # [STEM Just 4 U Home Page](https://stemjust4u.com/)
-## This project collects ADC data from RPi with either MCP3008 or ADS1115 along with esp32 and its internal ADC. 
+## This project involves listening for when an incremental rotary encoder knob is turned along with detecting a button press. 
 
-(Pi does not have internal ADC and requires an external MCP3008 or ADS1115)
+You won't know the absolute position, a potentiometer or absolute encoder is better for that, but you can detect the direction and change in position.  (A rotary encoder gives digital output vs the analog output of a potentiometer )The unique part of a rotary encoder knob is that you have infinite rotation and high precision, you can count each click when the knob is turned. Possible applications are sending a servo position, motor speed, volume, etc. 
 
-ADC is analog-to-digital conversion. Analog components, microphone, joystick, battery, output their signal as a varying voltage [ie 0-3.3V, 0-5V]. An ADC is required to convert this to a digital [0-1] signal that can be quantified in your program.  esp32 has built-in ADC capability but the RPis do not (the pins on the RPi take digital, 0-1, input). However an external MCP3008 or ADS1115 ADC can be connected to the RPi and give it analog capability.
+[Link to Project Web Site](https://github.com/stemjust4u/RotaryEncoder)  
 
-[Link to Project Web Site](https://github.com/stemjust4u/ADC)  
+![RotaryEncoder](images/Incremental_directional_encoder.gif#5rad)   
+[By Sagsaw at English Wikipedia - Transferred from en.wikipedia to Commons., Public Domain](https://commons.wikimedia.org/w/index.php?curid=61795514)  
+![RotaryEncoder](images/encoder.png#5rad)  
 
-![ADC](images/ADCfalstad.gif#250sq-5rad)  
-[Link to Falstad Circuit Simulator](http://www.falstad.com/circuit/)  
 ## Materials 
-* MCP3008 (8 channels, 10-Bit [0-1023] using SPI interface)
-* ADS1115  (4 channels, 16-Bit [0-65535] using I2C interface)
 * RPi
-* esp32 (8 channels, GPIOs 32-39, 12-Bit [0-4095])
-* Analog components (I used 2-axis joystick and ntc thermistor for testing)
+* esp32
+* Rotary Encoder (360 degree rotary encoder, incremental)
 ​​
-### Pi0/PCA9685 Software Requirements​
-In raspi-config make sure i2c is enabled (in the interface menu)  
-`$ sudo apt install python-smbus`  
-`$ sudo apt install i2c-tools`  
-Once the ADS1115 is connected you can confirm the address is 0x48 (assuming address has not been changed) with i2cdetect command (searches /dev/i2c-1)  
-`$ sudo i2cdetect -y 1`  
-​Python packages are in requirements on github and include: setuptools, adafruit-blinka, adafruit-circuitpython-ads1x15
+### Rotary Encoder
+A change in position is translated to a digital output signal by having two internal contacts that create an open/closed circuit as you turn the knob. Basic operation involves getting the current state (will be 0 or 1) of the two pins and then using polling or an interrupt handler to monitor for a change in the pin state. Since the contacts are offset, out-of-phase, you can determine the direction by paying attention to which state each pin changed to. The concept of a quadrature encoder will also be useful later if you want to monitor the speed, rpm, of a motor. By attaching an optical encoder and comparator (LM393) you can count how many state changes are happening per second (frequency) and convert that to rpms.
 
-### Pi0/MCP3008 Software Requirements  
-In raspi-config make sure spi is enabled (in the interface menu)
-Python packages are in requirements on github and include: adafruit-circuitpython-mcp3xxx
+![RotaryEncoder](images/Quadrature_Diagram.svg)  
+[By Sagsaw at English Wikipedia - Transferred from en.wikipedia to Commons., Public Domain](https://commons.wikimedia.org/w/index.php?curid=22725391)  
 
-**Adafruit_Blinka library provides the CircuitPython support in Python**
+## Polling vs interrupt handler
+There are a couple different methods you can use to monitor for a press of the button and the state change in the encoder pins, polling or interrupt.
 
-The voltage can be calculated from the raw ADC using the V reference (max Voltage the ADC can convert) and the ADC resolution (10, 12, 16 bit).   
+Polling is the simple while True: loop used in the main loop of many projects. It is a serial process. Each time your code loops it steps thru each part of your code and when it reaches your rotary_encoder step it will check the state of the pins. If they have changed you count it as a 'click' in the knob. The problem with this strategy is if you have a lot of other functions in your code you could miss some 'clicks' of the knob while other steps in your code are being executed. 
 
-Voltage measured = raw ADC X Vref/ADC resolution  
-(note - the ADS1115 outputs a voltage and no conversion is needed)
+>Polling example below - a button press or pin state change could be missed while the processor is busy executing the other_functionsA/B.
 
-So at 12bit and 3.3Vref  
-a raw ADC value of 0:  0 x 3.3/4095 = 0V  
-a raw ADC value of 4095: 4095 x 3.3/4095 = 3.3V  
+```main_loop()
+while True:  
+    click = encoder() # go get pin states, check if they changed  
+    button = button_press() # go get button state, check if it changed
+    if click or button:
+       # action based on a click or button press
+    other_functionA()
+    other_functionB()
+```
 
-An important consideration when using an ADC is if the voltage range you're measuring is within the allowable limits of the ADC/GPIO pins. If it is not within the limits a voltage divider is needed. (R2 = R1(1/(Vin/Vout-1))
+Interrupt or ISR (interrupt service routine) or IRQ (interrupt request). The advantage to an ISR is that it is a parallel process where it monitors for an event change on a piece of hardware or pin even while your code is running other functions.  When the event change is detected (ie a button pressed or knob turned) it stops momentarily to process that event. The disadvantage is it requires extra setup and your code does pause while you're processing the event (so you want to keep the 'event handler' short).
 
-The esp32 pins can only go up to 3.3V so you can not measure a signal greater than that. Projects measuring a 18650 battery (4.2V) require a voltage divider (R1=27k R2=100k) to bring the max voltage to 3.3V
+Creating an ISR (configure an event-detect and link it to a handler/callback)
+1. Configure the ISR/IRQ (event detect). You tell it which hardware (which pin) to monitor, the type of trigger (rising, falling, or both) and then what to do or how to 'handle' the event (your callback or handler function)
+2. In your callback/handler function you code what should happen when the system detected a trigger event on the pin you specified. Since your code will be stopped at this point you want to keep it short. It could be a simple boolean update to indicate the event was detected.
 
->A function I use a lot for converting from one unit/range to another unit range is value mapping.
->Example with a 12 bit adc [0-4095] and 3.3 Vref [0-3.3]  
->value = raw value read from ADC  
->istart = 0        ostart = 0  
->istop = 4095  ostop = 3.3  
-`def valmap(self, value, istart, istop, ostart, ostop):`  
-    `return ostart + (ostop - ostart) * ((value - istart) / (istop - istart))`
+>ISR example (note - the trigger = GPIO.BOTH. It will trigger on either a rise or fall. But you can specify RISING or FALLING to only trigger on one) 
+```
+import RPi.GPIO as GPIO
+GPIO.add_event_detect(encoderPin1, GPIO.BOTH, callback=pin1_handler)
+GPIO.add_event_detect(encoderPin2, GPIO.BOTH, callback=pin2_handler)
+GPIO.add_event_detect(button, GPIO.BOTH, callback=button_handler)
 
-# ADC
+def pin1_handler(channel):
+  pin1_changed = True
 
-ADC involves converting a continuous time/amplitude analog signal to a discrete time/amplitude digital signal. Sampling rate and resolution are two important factors.
+def pin2_handler(channel):
+  pin2_changed = True
 
-Sampling rate for ADS1115 ranges from 8 to 860 samples/second. MCP3008 is in the ksps. For simple STEM projects, reading a joystick, monitoring a battery, I have not had issues with sampling rates. When working with audio the sampling rate is critical (CD quality is 44.1ksps)
+def button_handler(channel):
+  button_changed = True
 
-Resolution for the different ADC in this projects are listed below. Again, more than enough resolution for simple STEM projects.
-MCP3008 (5Vref)= 10 bit or 1024 resolution (4.9mV steps)
-esp32 (3.3Vref) = 12 bit or 4096 resolution (0.8mV steps)
-ADS1115  = 16 bit or 65536 resolution
+main_loop()
+    if pin1_changed or pin2_changed or button_changed:
+      # action based on a click or button press
+    other_functionA()
+    other_functionB()
+```
 
-In the example below the Y-axis scale would be resolution (10 bit would have 1024 marks)
-And the X-scale (time) would represent sampling. (# of samples per second)  
-![ADC](images/Pcm.svg#250sq-5rad)  
-[CC BY-SA 3.0](https://commons.wikimedia.org/w/index.php?curid=635225)
+In my code for this project I used polling to monitor the encoder rotation (click) and an interrupt to monitor for the button. Status of the encoder is sent via mqtt.
 
-ADC converts an analog signal to digital. Its compliment is a DAC which converts the digital signal to analog (audio is another good example for this)  
-![ADC](images/Conversion_AD_DA.png#300y)  
-[By Megodenas - Own work, Public Domain](https://commons.wikimedia.org/w/index.php?curid=36972702)
+esp32 example for a button press
+```
+import machine
+from machine import Pin
+def button_callback(pin):
+    button_changed = True
 
->​In $ sudo raspi-config make sure SPI and/or I2C is enabled in the interface.  
-Can confirm in $ sudo nano /boot/config.txt  
-dtparam=i2c=on  
-dtparam=spi=on  
-## Rpi/MCP3008
-SPI0 uses 4 pins, MOSI(Din), MISO(Dout), CLK and a CS (chip select) pin. For the CS the github code allows GPIO7 or 8. You can use either pin and pass it when creating the SPI object.
+button = Pin(pin, Pin.IN, Pin.PULL_UP)
+button.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=button_callback)
 
-I used 5V for power (Vdd) and for Vref but you need to use a voltage divider on the MISO(Dout) to convert from 5V to 3.3V logic since RPi GPIO pin has 3.3V limit.   
->R2=R1(1/(Vin/Vout-1)) Vin=5V, Vout=3.3V, R1=2.4kohm  
->R2=4.7kohm  
+main_loop()
+    if button_changed:
+        # action based on a button press
+```
+In addition can disable/enable the irq. You would disable if you want to make adjustments to the boolean or a counter without the ISR over-riding it. Then enable when done.
+```
+state = machine.disable_irq()
+ # code here
+machine.enable_irq(state)
+```
 
-![ADC](images/RPi-MCP3008-Joystick-Vdivider.png#300x-200y-5rad)
-![ADC](images/RPi-MCP3008-Pin-Diagram.png#250x-200y-5rad)
-#5rad)
+>Using interrupts will be useful in other projects. The advantage of being able to monitor a hardware event while your code is executing (in parallel) is worth the time required to setup the callback functions.
+# Connections
 
-## RPi/ADS1115  
-The ADS1115 uses I2C interface so only 2 wires are required for the communication. Data (GPIO2) and Clock (GPIO3). The ADS1115 can run on the 3.3V or 5V (I confirmed the data/clock voltage is the same regardless if you use 3.3V or 5V). There is a gain setting that changes what voltage range you can measure.  
-![ADC](images/RPI-ADS1115-Thermistor-Breadboard.png#250x-200y-5rad)
+![RotaryEncoder](images/rotencoder.gif)  
+[Chart is from MQTT Explorer](http://mqtt-explorer.com/)
 
-## esp32
-For esp32 GPIO32-39 can be used for ADC. (max voltage you can measure is 3.3V)  
-![ADC](images/ADC-joystick-ESP32.png#300x-200y-5rad)
+The rotary encoder I have has 5 connections. 
+1. CLK = knob rotation pin1, GPIO pin (input)
+2. DT = knob rotation pin2, GPIO pin (input)
+3. SW = Button press, GPIO pin (input)
+4. \+ = 3.3V for RPi/esp32
+5. GND = Ground
 
-You load the upython scripts /main.py, /boot.py, /adc.py, /umqttsimply.py on to the esp32.  [Directions using Thonny](https://stemjust4u.com/esp32-esp8266)
+For the button you need to use a physical pull up/down resistor or the internal resistor on the RPi/esp32. Otherwise the state will be floating resulting in it bouncing around.
 
-### MQTT Explorer  
-MQTT Explorer is a great tool for watching messages between your clients and broker. You can also manually enter a topic and send a msg to test your code. This is useful for first setting up your code and trouble shooting.
+RPi - For Rpi2 I used pin 24 for the button and pins 17, 27 for the knob rotation.
+
+esp32 - For esp32 I used pin 4 for the button and pins 5, 18 for the knob rotation.
+
+>General Troubleshooting - I was having problems detecting a button press. When I measured the voltage on the pin when pulled high it was only 0.8V (pin was damaged). If you're having problems use a meter to check the voltages and make sure the hardware is ok. 
+
+Use internal DOWN/UP resistor to confirm GPIO pin is 0-3.3V with a multimeter.  
+RPi
+```import RPi.GPIO as GPIO
+GPIO.setmode(GPIO.BCM)
+GPIO.setup(pin, GPIO.IN, pull_up_down=GPIO.PUD_UP) # 3.3V and then confirm DOWN is 0V
+GPIO.cleanup()
+```
+esp32
+```
+pincheck = Pin(pin, Pin.IN, Pin.PULL_UP) # 3.3V and then confirm DOWN is 0V​
+```
+
+(see wiki link on [Pull-up_resistor](https://en.wikipedia.org/wiki/Pull-up_resistor) - For a switch that connects to ground, a pull-up resistor ensures a well-defined voltage (i.e. VCC, or logical high) across the remainder of the circuit when the switch is open. Conversely, for a switch that connects to VCC, a pull-down resistor ensures a well-defined ground voltage (i.e. logical low) when the switch is open.)
+
+
+>When using RPi.GPIO remember to include a GPIO.cleanup() when exiting. This will avoid a pin left high (3.3V) when it should be low (0V).
+```
+try:
+    while True:
+        # main code here
+except KeyboardInterrupt:
+     print("ctrl-C was pressed")
+finally:
+    GPIO.cleanup()
+```
 
 # Code
-​​The external ADC require python packages installed with pip3.  
-MCP3008: adafruit-circuitpython-mcp3xxx  
-ADS1115: adafruit-circuitpython-ads1x15  
-(and these require adafruit-blinka)    
+​​My general setup steps are in the [worflow](https://stemjust4u.com/project-workflow) section. Note - the github/venve/vscode steps aren't required. You can install the Python libraries in your home directory, create the Python script in a text editor and execute from command line. However, I found the advantages of isolating your code in a venv and working github/vscode is worth the effort it takes to learn them.
 
-MQTT is used to communicate readings to a node-red server.
-A max time delay is used to force a reading.
+1. Initialize an empty github repository with a README and .gitignore (python)
+2. Go to RPi directory and clone  
+    `$ git clone git@github.com:user/repo.git` (ssh copied from github)
+3. ​​Create virtual env  
+`$ python3 -m venv .venv`  
+`$ source .venv/bin/activate`
+4. Install packages​  
+`(.venv)$ pip3 install -r requirements.txt`
 
-RPi
-/ADCmqtt.py (uncomment which ADC you're using, MCP3008 or ADS1115)  
-|-/adc  
-|    |-MadcADS1115_4CH.py (ads1115 module)  
-|    |-MadcMCP3008_8CH.py (mcp3008 module)  
+If working with venv inside vscode make sure and select the venv Python interpreter in bottom left.
 
-/ADCmqtt_Joystick.py  (uses MCP3008 to read joystick movement including button)
-![ADC](images/mqtt-joystick.png#300x-200y-5rad)  
-For mcp3008: adc = mcp3008(2, 5, 400, 1, 8) # numOfChannels, vref, noiseThreshold, max time interval, chip select 
-
-/ADCmqtt_ntcThermistor.py  (uses ADS1115 to output Temp from ntc thermistor)
-![ADC](images/mqtt-thermistor.png#300x-200y-5rad)  
+### RPi
+/exampleMQTT.py  
+/rotaryencoder   
+||-Mrotary_encoder.py   
 
 ## Code Sections
 1. MQTT functions defined (along with other functions required)
@@ -129,85 +163,26 @@ For mcp3008: adc = mcp3008(2, 5, 400, 1, 8) # numOfChannels, vref, noiseThreshol
     * DEBUG (variables+status prints)
     * INFO (status prints)
     * CRITICAL (prints turned off)
-3. Hardware Setup (set pins, create objects for external hardware)
+3. Hardware Setup (set pins, create objects for external hardware)  
+    Using BCM GPIO number for pins  
+    __clkPin, dtPin, button = 17, 27, 24__  
+    __rotEnc1 = rotaryencoder.RotaryEncoder(clkPin, dtPin, button)__  
 4. MQTT setup (get server info align topics to match node-red)
-    * SUBSCRIBE TOPIC
-    * PUBLISH TOPIC
+    * __SUBSCRIBE TOPIC__
+    * __PUBLISH TOPIC__
 5. Start/bind MQTT functions
 6. Enter main loop
     * Receive msg/instructions (subscribed) from node-red via mqtt broker/server
-    * Perform actions
+    * __Perform actions__
     * Publish status/instructions to node-red via mqtt broker/server
+    * __Configure outgoing dictionary here__
 
-### ads1115
-ads = ads1115(1, 0.001, 1, 1, 0x48) # numOfChannels, noiseThreshold, max time interval, Gain, Address
-
->ADS1115 adc has 4 channels. If any channel has a delta (current-previous) that is above the noise threshold or if the max Time interval exceeded then the voltage from all initialized channels will be returned in a list.
-When creating object, pass: Number of channels, noise threshold, max time interval, gain, and address.
->>Number of channels (1-4)  
->>Noise threshold in Volts.   
->>Max time interval is used to catch drift/creep that is below the noise threshold.  
->>Gain options. Set the gain to capture the voltage range being measured.  
->>User FS (V)  
->>2/3   +/- 6.144  
->>1      +/- 4.096  
->>2      +/- 2.048  
->>4      +/- 1.024  
->>8      +/- 0.512  
->>16    +/- 0.256  
->>Note you can change the I2C address from its default (0x48)  
->>To check the address  
->>`$ sudo i2cdetect -y 1`  
->>Change the address by connecting the ADDR pin to one of the following  
->>0x48 (1001000) ADR -> GND  
->>0x49 (1001001) ADR -> VDD  
->>0x4A (1001010) ADR -> SDA  
->>0x4B (1001011) ADR -> SCL  
->>Then update the address when creating the ads object in the HARDWARE section  
-
-### mcp3008
-adc = mcp3008(2, 5, 400, 1, 8) # numOfChannels, vref, noiseThreshold, max time interval, chip select
-
-
->MCP3008 adc has 8 channels. If any channel has a delta (current-previous) that is above the noise threshold or if the max Time interval exceeded then the voltage from all channels will be returned in a list.
-When creating object, pass: Number of channels, Vref, noise threshold, max time interval, and CS or CE (chip select)
->>Number of channels (1-8)  
->>Vref (3.3 or 5V) ** Important on RPi. If using 5V must use a voltage divider on MISO  
->>R2=R1(1/(Vin/Vout-1)) Vin=5V, Vout=3.3V, R1=2.4kohm  
->>R2=4.7kohm
->>Noise threshold is in raw ADC   
->>Max time interval is used to catch drift/creep that is below the noise threshold.  
->>CS (chip select) - Uses SPI0 with GPIO 8 (CE0) or GPIO 7 (CE1)  
->>Requires 4 lines. SCLK, MOSI, MISO, CS  
->>You can enable SPI1 with a dtoverlay configured in "/boot/config.txt"  
->>dtoverlay=spi1-3cs  
->>SPI1 SCLK = GPIO 21  
->>MISO = GPIO 19  
->>MOSI = GPIO 20  
->>CS = GPIO 18(CE0) 17(CE1) 16(CE2)  
- 
 
 For esp32  
-/upython/main.py (and adc, boot, umqttsimple files)  
-
-adc = espADC(2, 3.3, 40, 1) # Create adc object. Pass numOfChannels, vref, noiseThreshold=35, max Interval = 1  
-
-The GPIO pins used for ADC have to be updated in the init of /adc.py module.
-
-**A function was added to monitor a joystick button press on pin 4**
+/upython/main.py (and rotaryencoder, boot, umqttsimple files)
 
 # Node Red
 [Link to General MQTT-Node-Red Setup](https://stemjust4u.com/mqtt-influxdb-nodered-grafana)  
-
+![RotaryEncoder](images/node-red-encoder.png#5rad)  
 Node red flow is in github or at bottom of project web site.  
-[ADC Project Web Site](https://stemjust4u.com/adc)
-
-![Node Red](images/nodered-realtime-graphs.gif#200x-150y-5rad) 
-![Node Red](images/nodered-ntc.gif#100x-150y-5rad) 
-
-![Node Red](images/nodered-ADC-plotter.png#500x-150y)  
-## Grafana Charts 
-Note - You will need to setup a influxdb for Grafana charts. Influxdb is in the node-red flow.   
-![Node Red](images/grafana-js-ntc.png#500x-150y)  
-![Node Red](images/grafana-setup.png#150x-150y)
-![Node Red](images/grafana-ntc.png#150x-150y)  
+[Rotary Encoder Project Web Site](https://stemjust4u.com/RotaryEncoder)
