@@ -47,6 +47,7 @@ Creating an ISR (configure an event-detect and link it to a handler/callback)
 
 >ISR example (note - the trigger = GPIO.BOTH. It will trigger on either a rise or fall. But you can specify RISING or FALLING to only trigger on one) 
 ```
+import RPi.GPIO as GPIO
 GPIO.add_event_detect(encoderPin1, GPIO.BOTH, callback=pin1_handler)
 GPIO.add_event_detect(encoderPin2, GPIO.BOTH, callback=pin2_handler)
 GPIO.add_event_detect(button, GPIO.BOTH, callback=button_handler)
@@ -68,6 +69,27 @@ main_loop()
 ```
 
 In my code for this project I used polling to monitor the encoder rotation (click) and an interrupt to monitor for the button. Status of the encoder is sent via mqtt.
+
+esp32 example for a button press
+```
+import machine
+from machine import Pin
+def button_callback(pin):
+    button_changed = True
+
+button = Pin(pin, Pin.IN, Pin.PULL_UP)
+button.irq(trigger=Pin.IRQ_FALLING | Pin.IRQ_RISING, handler=button_callback)
+
+main_loop()
+    if button_changed:
+        # action based on a button press
+```
+In addition can disable/enable the irq. You would disable if you want to make adjustments to the boolean or a counter without the ISR over-riding it. Then enable when done.
+```
+state = machine.disable_irq()
+ # code here
+machine.enable_irq(state)
+```
 
 >Using interrupts will be useful in other projects. The advantage of being able to monitor a hardware event while your code is executing (in parallel) is worth the time required to setup the callback functions.
 # Connections
