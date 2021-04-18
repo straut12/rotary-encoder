@@ -18,8 +18,6 @@ with open("stem", "rb") as f:
 MQTT_SERVER = '10.0.0.115'
 MQTT_USER = stem[0] 
 MQTT_PASSWORD = stem[1] 
-#MQTT_SUB_TOPIC1 = b'espJoystick/motion/all'
-#MQTT_PUB_TOPIC1 = b'espJoystick/motion/XY'
 MQTT_SUB_TOPIC1 = b'esp32/rotenc/all'
 MQTT_PUB_TOPIC1 = b'esp32/rotenc'
 MQTT_CLIENT_ID = ubinascii.hexlify(machine.unique_id())
