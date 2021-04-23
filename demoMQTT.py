@@ -139,7 +139,7 @@ if __name__ == "__main__":
     #MQTT_CLIENT_ID = 'RPi3AP'
     #MQTT_CLIENT_ID = 'RPi0'
 
-    MQTT_PUB_TOPIC = 'pi2nred/rotencoderZDATA/'
+    MQTT_PUB_TOPIC = 'pi2nred/rotencoder/'
     MQTT_PUB_TOPIC1 = MQTT_PUB_TOPIC + MQTT_CLIENT_ID
 
     #==== START/BIND MQTT FUNCTIONS ====#
