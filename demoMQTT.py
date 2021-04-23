@@ -67,7 +67,6 @@ if __name__ == "__main__":
 
     def on_connect(client, userdata, flags, rc):
         """ on connect callback verifies a connection established and subscribe to TOPICs"""
-        global MQTT_SUB_TOPIC
         logging.info("attempting on_connect")
         if rc==0:
             mqtt_client.connected = True
@@ -81,7 +80,7 @@ if __name__ == "__main__":
 
     def on_message(client, userdata, msg):
         """on message callback will receive messages from the server/broker. Must be subscribed to the topic in on_connect"""
-        global incomingID, mqtt_dummy1, mqtt_dummy2
+        global mqtt_dummy1, mqtt_dummy2
         logging.debug("Received: {0} with payload: {1}".format(msg.topic, str(msg.payload)))
         msgmatch = re.match(MQTT_REGEX, msg.topic)   # Check for match to subscribed topics
         if msgmatch:
@@ -122,31 +121,26 @@ if __name__ == "__main__":
     # Using BCM GPIO number for pins
     clkPin, dtPin, button = 17, 27, 24
     rotEnc1 = rotaryencoder.RotaryEncoder(clkPin, dtPin, button)
-    
+
+    #=======   MQTT SETUP ==============#    
     home = str(Path.home())                       # Import mqtt and wifi info. Remove if hard coding in python script
     with open(path.join(home, "stem"),"r") as f:
         user_info = f.read().splitlines()
 
-    #=======   MQTT SETUP ==============#
     MQTT_SERVER = '10.0.0.115'                    # Replace with IP address of device running mqtt server/broker
     MQTT_USER = user_info[0]                      # Replace with your mqtt user ID
     MQTT_PASSWORD = user_info[1]                  # Replace with your mqtt password
 
     MQTT_SUB_TOPIC = []          # + is wildcard for that level. Can .append more topics
     MQTT_SUB_TOPIC.append('nred2pi/rotencoderZCMD/+')
-    #MQTT_SUB_TOPIC.append('nred2pi/stepperZCMD/+')
-    #MQTT_SUB_TOPIC.append('nred2pi/servoZCMD/+')
     MQTT_REGEX = r'nred2pi/([^/]+)/([^/]+)'
 
     MQTT_CLIENT_ID = 'RPi4Argon1'
+    #MQTT_CLIENT_ID = 'RPi3AP'
+    #MQTT_CLIENT_ID = 'RPi0'
 
-    #MQTT_PUB_TOPIC = 'pi2nred/stepperZDATA/'
-    #MQTT_PUB_TOPIC = 'pi2nred/stepperZDATA/'
-    #MQTT_PUB_TOPIC = 'pi2nred/stepperZDATA/'
     MQTT_PUB_TOPIC = 'pi2nred/rotencoderZDATA/'
     MQTT_PUB_TOPIC1 = MQTT_PUB_TOPIC + MQTT_CLIENT_ID
-
-    #MQTT_PUB_TOPIC2 = 'pi2nred/nredZCMD/resetstepgauge'
 
     #==== START/BIND MQTT FUNCTIONS ====#
     # Create a couple flags to handle a failed attempt at connecting. If user/password is wrong we want to stop the loop.
