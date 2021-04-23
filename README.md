@@ -153,7 +153,7 @@ finally:
 If working with venv inside vscode make sure and select the venv Python interpreter in bottom left.
 
 ### RPi
-/exampleMQTT.py  
+/demoMQTT.py  
 /rotaryencoder   
 ||-Mrotary_encoder.py   
 
