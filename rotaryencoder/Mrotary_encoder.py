@@ -18,6 +18,7 @@ class RotaryEncoder:
     self.counter = 0
     self.clkUpdate = True
     self.buttonpressed = False
+    self.outgoing = [0,0]
     GPIO.setmode(GPIO.BCM)
     GPIO.setup(self.clkPin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
     GPIO.setup(self.dtPin, GPIO.IN, pull_up_down=GPIO.PUD_DOWN)
@@ -25,7 +26,7 @@ class RotaryEncoder:
     self.clkLastState = GPIO.input(self.clkPin)
     self.clkState = GPIO.input(self.clkPin)
     self.dtState = GPIO.input(self.dtPin)
-    GPIO.add_event_detect(self.button, GPIO.BOTH, callback=self.button_callback)
+    GPIO.add_event_detect(self.button, GPIO.BOTH, callback=self._button_callback)
 
   def runencoder(self):
     self.clkState = GPIO.input(self.clkPin)
@@ -39,22 +40,18 @@ class RotaryEncoder:
         self.clkLastState = self.clkState
       buttonstate = GPIO.input(self.button)
       self.buttonpressed = False
-      return self.counter, buttonstate
-    else:
-      return "na", "na"
+      if self._is_integer(self.counter):
+        self.outgoing[0] = self.counter
+        self.outgoing[1] = buttonstate
+        return self.outgoing
 
   def cleanupGPIO(self):
     GPIO.cleanup()
   
-  def button_callback(self, channel):
+  def _button_callback(self, channel):
     self.buttonpressed = True
 
-if __name__ == "__main__":
-  
-  logging.basicConfig(level=logging.DEBUG) # Set to CRITICAL to turn logging off. Set to DEBUG to get variables. Set to INFO for status messages.
-  logging.info("GPIO version: {0}".format(GPIO.VERSION))
-
-  def is_integer(n):
+  def _is_integer(self, n):
         if n == None:
             return False
         try:
@@ -64,6 +61,20 @@ if __name__ == "__main__":
         else:
             return float(n).is_integer()
 
+  ''' alternative integer check
+  def is_integer_num(n):
+      if isinstance(n, int):
+          return True
+      if isinstance(n, float):
+          return n.is_integer()
+      return False
+  '''
+
+if __name__ == "__main__":
+  
+  logging.basicConfig(level=logging.DEBUG) # Set to CRITICAL to turn logging off. Set to DEBUG to get variables. Set to INFO for status messages.
+  logging.info("GPIO version: {0}".format(GPIO.VERSION))
+
   clkPin = 17              # Using BCM GPIO number for pins
   dtPin = 27
   button = 24
@@ -71,9 +82,9 @@ if __name__ == "__main__":
   
   try:
     while True:
-      clicks, buttonstate = rotEnc1.runencoder()
-      if is_integer(clicks):
-        logging.info("clicks: {0} Button: {1}".format(clicks, buttonstate))
+      clicks = rotEnc1.runencoder()
+      if clicks is not None:
+        logging.debug("clicks:{0}".format(clicks))
   except KeyboardInterrupt:
     logging.info("Pressed ctrl-C")
   finally:
