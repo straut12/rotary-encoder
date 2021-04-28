@@ -1,80 +1,129 @@
+import utime, ubinascii, micropython, network, re, ujson
+from lib.umqttsimple import MQTTClient
 from machine import Pin
-from time import sleep
-import ujson
-from rotaryencoder import RotaryEncoder
+from rotaryencoder import RotaryEncoder  # Import RotaryEncoder module created in /lib folder
+import gc
+gc.collect()
+micropython.alloc_emergency_exception_buf(100)
 
-if __name__ == "__main__":
+def connect_wifi(WIFI_SSID, WIFI_PASSWORD):
+    station = network.WLAN(network.STA_IF)
+
+    station.active(True)
+    station.connect(WIFI_SSID, WIFI_PASSWORD)
+
+    while station.isconnected() == False:
+        pass
+
+    print('Connection successful')
+    print(station.ifconfig())
+
+def mqtt_setup(IPaddress):
+    global MQTT_CLIENT_ID, MQTT_SERVER, MQTT_USER, MQTT_PASSWORD, MQTT_SUB_TOPIC, MQTT_REGEX
+    with open("stem", "rb") as f:    # Remove and over-ride MQTT/WIFI login info below
+      stem = f.read().splitlines()
+    MQTT_SERVER = IPaddress   # Over ride with MQTT/WIFI info
+    MQTT_USER = stem[0]         
+    MQTT_PASSWORD = stem[1]
+    WIFI_SSID = stem[2]
+    WIFI_PASSWORD = stem[3]
+    MQTT_CLIENT_ID = ubinascii.hexlify(machine.unique_id())
+    MQTT_SUB_TOPIC = b'esp32/rotenc/instructions'   # Place holder. No instructions are sent from nodered to rot encoder
     
-  micropython.alloc_emergency_exception_buf(100) # allow reporting of exception errors in ISR
-
-  def on_message(topic, msg):
-    #print("Topic %s msg %s ESP Subscribed to %s" % (topic, msg, MQTT_SUB_TOPIC1))
-    global newmsg, incomingD
-    if topic == MQTT_SUB_TOPIC1:
-      incomingD = ujson.loads(msg.decode("utf-8", "ignore")) # decode json data to dictionary
-      newmsg = True
-      #Uncomment prints for debugging. Will print the JSON incoming payload and unpack the converted dictionary
-      #print("Received topic(tag): {0}".format(topic))
-      #print("JSON payload: {0}".format(msg.decode("utf-8", "ignore")))
-      #print("Unpacked dictionary (converted JSON>dictionary)")
-      #for key, value in incomingD.items():
-      #  print("{0}:{1}".format(key, value))
-      
-  def connect_and_subscribe():
-    global MQTT_CLIENT_ID, MQTT_SERVER, MQTT_SUB_TOPIC1
+def mqtt_connect_subscribe():
+    global MQTT_CLIENT_ID, MQTT_SERVER, MQTT_SUB_TOPIC, MQTT_USER, MQTT_PASSWORD
     client = MQTTClient(MQTT_CLIENT_ID, MQTT_SERVER, user=MQTT_USER, password=MQTT_PASSWORD)
-    client.set_callback(on_message)
+    client.set_callback(mqtt_on_message)
     client.connect()
-    client.subscribe(MQTT_SUB_TOPIC1)
-    print('Connected to %s MQTT broker, subscribed to %s topic' % (MQTT_SERVER, MQTT_SUB_TOPIC1))
+    print('(CONNACK) Connected to {0} MQTT broker'.format(MQTT_SERVER))
+    client.subscribe(MQTT_SUB_TOPIC)
+    print('Subscribed to {0}'.format(MQTT_SUB_TOPIC))
     return client
 
-  def restart_and_reconnect():
+def mqtt_on_message(topic, msg):
+    print("on_message Received - topic:{0} payload:{1}".format(topic, msg.decode("utf-8", "ignore")))
+    # No messages sent for encoder in this project
+
+def mqtt_reset():
     print('Failed to connect to MQTT broker. Reconnecting...')
-    sleep(10)
+    utime.sleep_ms(5000)
     machine.reset()
+    
+# A rotary encoder function is not necessary but will be useful later for scalibility.
+# Eventually want to incorporate ADC, rotary encoder, servo, motors, etc in one program so pays off to
+# setup a structure early on. This will make it easier to add devices later.
 
-  try:
-    mqtt_client = connect_and_subscribe()
-  except OSError as e:
-    restart_and_reconnect()
+def create_rotary_encoder(clkPin, dtPin, button_rotenc):
+    ''' Setup the rotary encoder items needed to publish knob status to node red '''
+    global pinsummary, device, outgoingD
+    device.append(b'rotencoder')
+    outgoingD[b'rotencoder'] = {}
+    outgoingD[b'rotencoder']['data'] = {}
+    outgoingD[b'rotencoder']['send'] = False   # Used to flag when to send results
+    pinsummary.append(clkPin)
+    pinsummary.append(dtPin)
+    if button_rotenc is not None: pinsummary.append(button_rotenc)
+    return RotaryEncoder(clkPin, dtPin, button_rotenc, setupinfo=True, debuginfo=False)
 
-  def is_integer(n):
-      if n == None or n == "na":
-          return False
-      if isinstance(n, int):
-        return True
-      if abs(round(n) - n) == 0.5:
-        return False
-      else:
-        return True
-
-  # MQTT setup is successful.
-  # Publish generic status confirmation easily seen on MQTT Explorer
-  # Initialize dictionaries and start the main loop.
-  mqtt_client.publish(b"status", b"esp32 connected, entering main loop")
-  led = Pin(2, Pin.OUT) #2 is the internal LED
-  led.value(1)
-  sleep(1)
-  led.value(0)  # flash led to know main loop starting
+def main():
+    global pinsummary          # Will keep track of what pins are being used to help avoid duplicates
+    global device, outgoingD   # Containers setup in 'create' functions and used for Publishing mqtt
+    
+    #===== SETUP MQTT/DEBUG VARIABLES ============#
+    # Setup mqtt variables (topics and data containers) used in on_message, main loop, and publishing
+    # Further setup of variables is completed in specific 'create_device' functions
+    mqtt_setup('10.0.0.115')
+    device = []    # mqtt lvl2 topic category and '.appended' in create functions
+    outgoingD = {} # container used for publishing mqtt data
+    
+    # umqttsimple requires topics to be byte format. For string.join to work on topics, all items must be the same, bytes.
+    ESPID = b'/esp32A'  # Specific MQTT_PUB_TOPICS created at time of publishing using string.join (specifically lvl2.join)
+    MQTT_PUB_TOPIC = [b'esp2nred/', ESPID]
   
-  outgoingD, incomingD = {}, {}
-  newmsg = True
-  clkPin, dtPin, button = 18, 5, 4
-  rotEnc1 = RotaryEncoder(clkPin, dtPin, button)
+    # Used to stagger timers for checking msgs, getting data, and publishing msgs
+    on_msgtimer_delay_ms = 250
+    
+    #=== SETUP DEVICES ===#
+    # Boot fails if pin 12 is pulled high
+    # Pins 34-39 are input only and do not have internal pull-up resistors. Good for ADC
+    # Items that are sent as part of mqtt topic will be binary (b'item)
+    pinsummary = []
+    
+    clkPin, dtPin, button_rotenc = 15, 4, 2
+    rotEnc1 = create_rotary_encoder(clkPin, dtPin, button_rotenc)
+    
+    print('Pins in use:{0}'.format(sorted(pinsummary)))
+    #==========#
+    # Connect and create the client
+    try:
+        mqtt_client = mqtt_connect_subscribe()
+    except OSError as e:
+        mqtt_reset()
+    # MQTT setup is successful, publish status msg and flash on-board led
+    mqtt_client.publish(b'status'.join(MQTT_PUB_TOPIC), b'esp32 connected, entering main loop')
 
-  while True:
-      try:
-        mqtt_client.check_msg()
-        if newmsg:                 # Place holder if wanting to receive message/instructions
-          newmsg = False
-        clicks, buttonstate = rotEnc1.runencoder()
-        if is_integer(clicks):
-            outgoingD = {"RotEnc1Ci":str(clicks), "RotEnc1Bi":str(buttonstate)}
-            print("clicks: {0} Button: {1}".format(clicks, buttonstate))
-            mqtt_client.publish(MQTT_PUB_TOPIC1, ujson.dumps(outgoingD))  # Convert to JSON and publish voltage of each channel
-            #Uncomment prints for debugging. 
-            print(ujson.dumps(outgoingD))
-            #print("JSON payload: {0}\n".format(ujson.dumps(outgoingD)))
-      except OSError as e:
-        restart_and_reconnect()
+    sendmsgs = False    
+   
+    while True:
+        try:
+            clicks = rotEnc1.update()
+            if clicks is not None:
+                outgoingD[b'rotencoder']['send'] = True
+                outgoingD[b'rotencoder']['data']['RotEnc1Ci'] = str(clicks[0])
+                outgoingD[b'rotencoder']['data']['RotEnc1Bi'] = str(clicks[1]) # Button state
+                sendmsgs = True
+
+            if sendmsgs:
+                item = b'rotencoder'
+                if outgoingD[item]['send']:
+                    mqtt_client.publish(item.join(MQTT_PUB_TOPIC), ujson.dumps(outgoingD[item]['data']))
+                    print('Published msg {0} with payload {1}'.format(item.join(MQTT_PUB_TOPIC), ujson.dumps(outgoingD[item]['data'])))
+                    outgoingD[item]['send'] = False
+                sendmsgs = False
+                
+        except OSError as e:
+            mqtt_reset()
+
+if __name__ == "__main__":
+    # Run main loop            
+    main()
