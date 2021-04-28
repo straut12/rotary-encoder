@@ -73,37 +73,48 @@ def mqtt_setup(IPaddress):
     MQTT_SUB_TOPIC = []
     SUBLVL1 = 'nred2' + MQTT_CLIENT_ID
     # lvl2: Specific MQTT_PUB_TOPICS created at time of publishing done using string.join (specifically item.join)
-    MQTT_PUB_TOPIC = [MQTT_CLIENT_ID + '2nred', MQTT_CLIENT_ID]
+    MQTT_PUB_TOPIC = ['pi2nred/', '/' + MQTT_CLIENT_ID]
     mqtt_outgoingD = {}            # Container for data to be published via mqtt
     device = []                    # mqtt lvl2 topic category and '.appended' in create functions
 
-def create_rotary_encoder(clkPin, dtPin, button_rotenc):
+def create_rotary_encoder(item, clkPin, dtPin, button_rotenc):
     ''' Setup the rotary encoder items needed to publish knob status to node red '''
-    global device, mqtt_outgoingD
-    MQTT_SUB_TOPIC.append('nred2pi/rotencoderZCMD/+')
-    device.append('rotencoder')
-    mqtt_outgoingD['rotencoder'] = {}
-    mqtt_outgoingD['rotencoder']['data'] = {}
-    mqtt_outgoingD['rotencoder']['send'] = False   # Used to flag when to send results
-    return rotaryencoder.RotaryEncoder(clkPin, dtPin, button_rotenc)
+    global device, mqtt_outgoingD, SUBLVL1
+    if item == 'REPEAT':
+        print('Next device using first topic in this group')
+        pass
+    else:
+        MQTT_SUB_TOPIC.append(SUBLVL1 + '/' + item + 'ZCMD/+')
+        device.append(item)
+        mqtt_outgoingD[item] = {}
+        mqtt_outgoingD[item]['data'] = {}
+        mqtt_outgoingD[item]['send'] = False   # Used to flag when to send results
+        print('Subscribing next device to: {0}'.format(SUBLVL1 + '/' + item + 'ZCMD/+'))
+    return rotaryencoder.RotaryEncoder(clkPin, dtPin, button_rotenc, True)
 
 def main():
     global device, mqtt_outgoingD             # Containers setup in 'create' functions and used for Publishing mqtt
     global MQTT_SERVER, MQTT_USER, MQTT_PASSWORD, MQTT_CLIENT_ID, mqtt_client, MQTT_PUB_TOPIC
 
     logging.basicConfig(level=logging.DEBUG)
-    logging.info("Setup with basicConfig root logger")
+    logging.info("Setup with basicConfig root logger\n")
     
     # MQTT structure: lvl1 = from-to     (ie Pi-2-NodeRed shortened to pi2nred)
     #                 lvl2 = device type (ie servoZCMD, stepperZCMD, adc)
     #                 lvl3 = free form   (ie controls, servo IDs, etc)
     MQTT_CLIENT_ID = 'pi' # Can make ID unique if multiple Pi's could be running similar devices (ie servos, ADC's) 
                           # Node red will need to be linked to unique MQTT_CLIENT_ID
-    mqtt_setup('10.0.0.115')
+    mqtt_setup('10.0.0.115') # Pass IP address
 
     #==== HARDWARE SETUP =====#
     clkPin, dtPin, button_rotenc = 17, 27, 24
-    rotEnc1 = create_rotary_encoder(clkPin, dtPin, button_rotenc)
+    lvl2 = 'rotencoder' # This will be used as mqtt topic lvl2. Can not duplicate it for multiple devices, should be unique
+    rotEnc1 = create_rotary_encoder(lvl2, clkPin, dtPin, button_rotenc)
+    # For example
+    clkPin, dtPin, button_rotenc = 18, 26, 25
+    lvl2 = 'REPEAT' # If want to create a second device but keep it on the same topic as previous then pass 'repeat' 
+    rotEnc2 = create_rotary_encoder(lvl2, clkPin, dtPin, button_rotenc)
+    print('\n')
 
     #==== START/BIND MQTT FUNCTIONS ====#
     # Create a couple flags to handle a failed attempt at connecting. If user/password is wrong we want to stop the loop.
@@ -133,8 +144,8 @@ def main():
         while True:
             clicks = rotEnc1.runencoder()
             if clicks is not None:
-                mqtt_outgoingD['rotencoder']['data']['RotEnc1Ci'] = str(clicks[0])
-                mqtt_outgoingD['rotencoder']['data']['RotEnc1Bi'] = str(clicks[1])
+                mqtt_outgoingD[item]['data']['RotEnc1Ci'] = str(clicks[0])
+                mqtt_outgoingD[item]['data']['RotEnc1Bi'] = str(clicks[1])
                 mqtt_client.publish(item.join(MQTT_PUB_TOPIC), json.dumps((mqtt_outgoingD[item]['data'])))
                 logging.info("clicks:{0}".format(clicks[0], clicks[1]))
     except KeyboardInterrupt:

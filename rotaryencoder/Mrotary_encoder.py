@@ -11,7 +11,7 @@ import logging
 import RPi.GPIO as GPIO
 
 class RotaryEncoder:
-  def __init__(self, clkPin, dtPin, button):
+  def __init__(self, clkPin, dtPin, button, setupinfo=True):
     self.clkPin = clkPin
     self.dtPin = dtPin
     self.button = button
@@ -27,6 +27,7 @@ class RotaryEncoder:
     self.clkState = GPIO.input(self.clkPin)
     self.dtState = GPIO.input(self.dtPin)
     GPIO.add_event_detect(self.button, GPIO.BOTH, callback=self._button_callback)
+    if setupinfo: print('Rotary Encoder pins- clk:{0} data:{1} button:{2}'.format(self.clkPin, self.dtPin, self.button))
 
   def runencoder(self):
     self.clkState = GPIO.input(self.clkPin)
