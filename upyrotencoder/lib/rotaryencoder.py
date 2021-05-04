@@ -5,7 +5,8 @@ both CW and CCW. Starts at 0 and increments by 1 or -1.
 Returns two integers, the position of the knob and the state of the button, 0 or 1.
 
 '''
-
+from boot import MAIN_FILE_LOGGING, MAIN_FILE_MODE, MAIN_FILE_NAME, logfiles
+import ulogging
 from machine import Pin
 
 class RotaryEncoder:
