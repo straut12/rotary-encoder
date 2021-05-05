@@ -11,7 +11,7 @@ import logging
 import RPi.GPIO as GPIO
 
 class RotaryEncoder:
-  def __init__(self, clkPin, dtPin, button, setupinfo=True):
+  def __init__(self, clkPin, dtPin, button, key1='RotEnc1Ci', key2='RotEnc1Bi', setupinfo=True):
     self.clkPin = clkPin
     self.dtPin = dtPin
     self.button = button
