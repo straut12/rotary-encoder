@@ -10,6 +10,7 @@ from os import path
 from pathlib import Path
 from logging.handlers import RotatingFileHandler
 import rotaryencoder
+from debugging import Timer
 
 class pcolor:
     ''' Add color to print statements '''
@@ -196,10 +197,13 @@ def main():
     RFHmode = 1 # log level and RFH mode will determine output for custom loggers
                 #log_level, mode   |  logger.x() | output
                 #------------------|-------------|-----------
-                #      INFO, 1     |  info       | print only
+                #      INFO, 1     |  info       | print
                 #      INFO, 2     |  info       | print+logfile
+                #      INFO, 3     |  info       | logfile
                 #      DEBUG,1     |  info+debug | print only
                 #      DEBUG,2     |  info+debug | print+logfile
+                #      DEBUG,3     |  info+debug | logfile
+
     _loggers = [] # container to keep track of loggers created
     main_logger = setup_logging(path.dirname(path.abspath(__file__)), main_logger_type, log_level=main_logger_level, mode=RFHmode)
     mqtt_logger = setup_logging(path.dirname(path.abspath(__file__)), 'custom', 'mqtt', log_level=logging.INFO, mode=1)
@@ -209,7 +213,7 @@ def main():
     #                 lvl3 = free form   (ie controls, servo IDs, etc)
     MQTT_CLIENT_ID = 'pi' # Can make ID unique if multiple Pi's could be running similar devices (ie servos, ADC's) 
                           # Node red will need to be linked to unique MQTT_CLIENT_ID
-    mqtt_setup('10.0.0.115') # Pass IP address
+    mqtt_setup('10.0.0.115') # IP address
 
     printcolor = True
     deviceD = {}  # Primary container for storing all devices, topics, and data
