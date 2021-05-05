@@ -10,55 +10,114 @@ from pathlib import Path
 from logging.handlers import RotatingFileHandler
 import rotaryencoder
 
-def setup_logging(log_dir):
-    # Create loggers
-    main_logger = logging.getLogger(__name__)
-    main_logger.setLevel(logging.INFO)
-    log_file_format = logging.Formatter("[%(levelname)s] - %(asctime)s - %(name)s - : %(message)s in %(pathname)s:%(lineno)d")
-    log_console_format = logging.Formatter("[%(levelname)s]: %(message)s")
+class pcolor:
+    ''' Add color to print statements '''
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
 
-    console_handler = logging.StreamHandler()
-    console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(log_console_format)
+class CustomFormatter(logging.Formatter):
+    """ Custom logging format with color """
 
-    exp_file_handler = RotatingFileHandler('{}/exp_debug.log'.format(log_dir), maxBytes=10**6, backupCount=5) # 1MB file
-    exp_file_handler.setLevel(logging.INFO)
-    exp_file_handler.setFormatter(log_file_format)
+    grey = "\x1b[38;21m"
+    green = "\x1b[32m"
+    yellow = "\x1b[33;21m"
+    red = "\x1b[31;21m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+    format = "[%(levelname)s]: %(name)s - %(message)s"
 
-    exp_errors_file_handler = RotatingFileHandler('{}/exp_error.log'.format(log_dir), maxBytes=10**6, backupCount=5)
-    exp_errors_file_handler.setLevel(logging.WARNING)
-    exp_errors_file_handler.setFormatter(log_file_format)
+    FORMATS = {
+        logging.DEBUG: green + format + reset,
+        logging.INFO: grey + format + reset,
+        logging.WARNING: yellow + format + reset,
+        logging.ERROR: red + format + reset,
+        logging.CRITICAL: bold_red + format + reset
+    }
 
-    main_logger.addHandler(console_handler)
-    main_logger.addHandler(exp_file_handler)
-    main_logger.addHandler(exp_errors_file_handler)
-    return main_logger
+    def format(self, record):
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = logging.Formatter(log_fmt)
+        return formatter.format(record)
+
+def setup_logging(log_dir, logger_type, logger_name=__name__, log_level=logging.INFO, mode=1):
+    ''' Create basic or custom loggers with RotatingFileHandler '''
+    global _loggers
+    # logger_type = basic
+    # logger_type = custom with log file options below
+                # log_level and mode will determine output
+                    #log_level, RFHmode|  logger.x() | output
+                    #------------------|-------------|-----------
+                    #      INFO, 1     |  info       | print only
+                    #      INFO, 2     |  info       | print+logfile
+                    #      DEBUG,1     |  info+debug | print only
+                    #      DEBUG,2     |  info+debug | print+logfile
+
+    if logger_type == 'basic':
+        if len(logging.getLogger().handlers) == 0:       # Root logger does not already exist, will create it
+            logging.basicConfig(level=log_level) # Create Root logger
+            custom_logger = logging.getLogger(logger_name)    # Set logger to root logging
+        else:
+            custom_logger = logging.getLogger(logger_name)   # Root logger already exists so just linking logger to it
+    else:
+        if mode == 1:
+            logfile_log_level = logging.CRITICAL
+        elif mode == 2:
+            logfile_log_level = logging.DEBUG
+
+        custom_logger = logging.getLogger(logger_name)
+        custom_logger.setLevel(log_level)
+        log_file_format = logging.Formatter("[%(levelname)s] - %(asctime)s - %(name)s - : %(message)s in %(pathname)s:%(lineno)d")
+        log_console_format = logging.Formatter("[%(levelname)s]: %(message)s")
+
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(log_level)
+        console_handler.setFormatter(CustomFormatter())
+
+        log_file_handler = RotatingFileHandler('{}/debug.log'.format(log_dir), maxBytes=10**6, backupCount=5) # 1MB file
+        log_file_handler.setLevel(logfile_log_level)
+        log_file_handler.setFormatter(log_file_format)
+
+        log_errors_file_handler = RotatingFileHandler('{}/error.log'.format(log_dir), maxBytes=10**6, backupCount=5)
+        log_errors_file_handler.setLevel(logging.WARNING)
+        log_errors_file_handler.setFormatter(log_file_format)
+
+        custom_logger.addHandler(console_handler)
+        custom_logger.addHandler(log_file_handler)
+        custom_logger.addHandler(log_errors_file_handler)
+    if custom_logger not in _loggers: _loggers.append(custom_logger)
+    return custom_logger
                 
 def on_connect(client, userdata, flags, rc):
     """ on connect callback verifies a connection established and subscribe to TOPICs"""
-    logging.info("attempting on_connect")
+    main_logger.info("attempting on_connect")
     if rc==0:
         mqtt_client.connected = True
         for topic in MQTT_SUB_TOPIC:
             client.subscribe(topic)
-            logging.info("Subscribed to: {0}\n".format(topic))
-        logging.info("Successful Connection: {0}".format(str(rc)))
+            main_logger.info("Subscribed to: {0}\n".format(topic))
+        main_logger.info("Successful Connection: {0}".format(str(rc)))
     else:
         mqtt_client.failed_connection = True  # If rc != 0 then failed to connect. Set flag to stop mqtt loop
-        logging.info("Unsuccessful Connection - Code {0}".format(str(rc)))
+        main_logger.info("Unsuccessful Connection - Code {0}".format(str(rc)))
 
 def on_message(client, userdata, msg):
     """on message callback will receive messages from the server/broker. Must be subscribed to the topic in on_connect"""
-    logging.debug("Received: {0} with payload: {1}".format(msg.topic, str(msg.payload)))
+    mqtt_logger.debug("Received: {0} with payload: {1}".format(msg.topic, str(msg.payload)))
 
 def on_publish(client, userdata, mid):
     """on publish will send data to client"""
-    #Debugging. Will unpack the dictionary and then the converted JSON payload
-    logging.debug("msg ID: " + str(mid)) 
+    mqtt_logger.debug("msg ID: " + str(mid)) 
     pass 
 
 def on_disconnect(client, userdata,rc=0):
-    logging.debug("DisConnected result code "+str(rc))
+    main_logger.info("DisConnected result code "+str(rc))
     mqtt_client.loop_stop()
 
 def mqtt_setup(IPaddress):
@@ -70,34 +129,61 @@ def mqtt_setup(IPaddress):
     MQTT_SERVER = IPaddress                    # Replace with IP address of device running mqtt server/broker
     MQTT_USER = user_info[0]                   # Replace with your mqtt user ID
     MQTT_PASSWORD = user_info[1]               # Replace with your mqtt password
+
+    # SUBSCRIBE: Specific MQTT_SUB_TOPICS created inside 'setup_device' function
     MQTT_SUB_TOPIC = []
     SUBLVL1 = 'nred2' + MQTT_CLIENT_ID
-    # lvl2: Specific MQTT_PUB_TOPICS created at time of publishing done using string.join (specifically item.join)
-    MQTT_PUB_TOPIC = ['pi2nred/', '/' + MQTT_CLIENT_ID]
-    mqtt_outgoingD = {}            # Container for data to be published via mqtt
-    device = []                    # mqtt lvl2 topic category and '.appended' in create functions
 
-def create_rotary_encoder(item, clkPin, dtPin, button_rotenc):
-    ''' Setup the rotary encoder items needed to publish knob status to node red '''
-    global device, mqtt_outgoingD, SUBLVL1
-    if item == 'REPEAT':
-        print('Next device using first topic in this group')
-        pass
+    # PUBLISH: Specific MQTT_PUB_TOPICS created at time of publishing using string.join    
+    MQTT_PUB_TOPIC = []
+    MQTT_PUB_TOPIC = ['pi2nred/', '/' + MQTT_CLIENT_ID]
+
+def setup_device(device, lvl2, data_keys):
+    global printcolor, deviceD, SUBLVL1, main_logger
+    if deviceD.get(device) == None:
+        deviceD[device] = {}
+        deviceD[device]['data'] = {}
+        deviceD[device]['lvl2'] = lvl2 # Sub/Pub lvl2 in topics. Does not have to be unique, can piggy-back on another device lvl2
+        topic = f"{SUBLVL1}/{deviceD[device]['lvl2']}ZCMD/+"
+        if topic not in MQTT_SUB_TOPIC:
+            MQTT_SUB_TOPIC.append(topic)
+            for key in data_keys:
+                deviceD[device]['data'][key] = 0
+        else:
+            for key in data_keys:
+                for item in deviceD:
+                    if deviceD[item]['data'].get(key) != None:
+                        main_logger.warning(f"**DUPLICATE WARNING {device} and {item} are both publishing {key} on {topic}")
+                deviceD[device]['data'][key] = 0
+        deviceD[device]['send'] = False
+        printcolor = not printcolor # change color of every other print statement
+        if printcolor: 
+            main_logger.info(f"{pcolor.OKBLUE}{device}{pcolor.ENDC} Subscribing to: {pcolor.OKBLUE}{topic}{pcolor.ENDC}")
+            main_logger.info(f"   JSON payload keys will be:{pcolor.OKBLUE}{*deviceD[device]['data'],}{pcolor.ENDC}")
+        else:
+            main_logger.info(f"{pcolor.OKGREEN}{device}{pcolor.ENDC} Subscribing to: {pcolor.OKGREEN}{topic}{pcolor.ENDC}")
+            main_logger.info(f"   JSON payload keys will be:{pcolor.OKGREEN}{*deviceD[device]['data'],}{pcolor.ENDC}")
     else:
-        MQTT_SUB_TOPIC.append(SUBLVL1 + '/' + item + 'ZCMD/+')
-        device.append(item)
-        mqtt_outgoingD[item] = {}
-        mqtt_outgoingD[item]['data'] = {}
-        mqtt_outgoingD[item]['send'] = False   # Used to flag when to send results
-        print('Subscribing next device to: {0}'.format(SUBLVL1 + '/' + item + 'ZCMD/+'))
-    return rotaryencoder.RotaryEncoder(clkPin, dtPin, button_rotenc, True)
+        main_logger.error(f"Device {device} already in use. Device name should be unique")
+        sys.exit(f"{pcolor.FAIL}Device {device} already in use. Device name should be unique{pcolor.ENDC}")
 
 def main():
-    global device, mqtt_outgoingD             # Containers setup in 'create' functions and used for Publishing mqtt
+    global deviceD, printcolor             # Containers setup in 'create' functions and used for Publishing mqtt
     global MQTT_SERVER, MQTT_USER, MQTT_PASSWORD, MQTT_CLIENT_ID, mqtt_client, MQTT_PUB_TOPIC
+    global _loggers, main_logger, mqtt_logger
 
-    logging.basicConfig(level=logging.DEBUG)
-    logging.info("Setup with basicConfig root logger\n")
+    main_logger_level= logging.DEBUG # CRITICAL=logging off. DEBUG=get variables. INFO=status messages.
+    main_logger_type = 'custom'       # 'basic' or 'custom' (with option for log files)
+    RFHmode = 1 # log level and RFH mode will determine output for custom loggers
+                #log_level, mode   |  logger.x() | output
+                #------------------|-------------|-----------
+                #      INFO, 1     |  info       | print only
+                #      INFO, 2     |  info       | print+logfile
+                #      DEBUG,1     |  info+debug | print only
+                #      DEBUG,2     |  info+debug | print+logfile
+    _loggers = [] # container to keep track of loggers created
+    main_logger = setup_logging(path.dirname(path.abspath(__file__)), main_logger_type, log_level=main_logger_level, mode=RFHmode)
+    mqtt_logger = setup_logging(path.dirname(path.abspath(__file__)), 'custom', 'mqtt', log_level=logging.INFO, mode=1)
     
     # MQTT structure: lvl1 = from-to     (ie Pi-2-NodeRed shortened to pi2nred)
     #                 lvl2 = device type (ie servoZCMD, stepperZCMD, adc)
@@ -106,15 +192,35 @@ def main():
                           # Node red will need to be linked to unique MQTT_CLIENT_ID
     mqtt_setup('10.0.0.115') # Pass IP address
 
+    printcolor = True
+    deviceD = {}  # Primary container for storing all devices, topics, and data
+                  # Device name should be unique, can not duplicate device ID
+                  # Topic lvl2 name can be a duplicate, meaning multiple devices publishing data on the same topic
+                  # If topic lvl2 name repeats would likely want the data_keys to be unique
+    
     #==== HARDWARE SETUP =====#
+    rotaryEncoderSet = {}
+    rotenc_logger = setup_logging(path.dirname(path.abspath(__file__)), 'custom', 'rotenc', log_level=logging.DEBUG, mode=1)
+
+    device = "rotEnc1"  # Device name should be unique, can not duplicate device ID
+    lvl2 = 'rotencoder' # Topic lvl2 name can be a duplicate, meaning multiple devices publishing data on the same topic
+    data_keys = ['RotEnc1Ci', 'RotEnc1Bi'] # If topic lvl2 name repeats would likely want the data_keys to be unique
     clkPin, dtPin, button_rotenc = 17, 27, 24
-    lvl2 = 'rotencoder' # This will be used as mqtt topic lvl2. Can not duplicate it for multiple devices, should be unique
-    rotEnc1 = create_rotary_encoder(lvl2, clkPin, dtPin, button_rotenc)
-    # For example
-    clkPin, dtPin, button_rotenc = 18, 26, 25
-    lvl2 = 'REPEAT' # If want to create a second device but keep it on the same topic as previous then pass 'repeat' 
-    rotEnc2 = create_rotary_encoder(lvl2, clkPin, dtPin, button_rotenc)
-    print('\n')
+    setup_device(device, lvl2, data_keys)
+    rotaryEncoderSet[device] = rotaryencoder.RotaryEncoder(clkPin, dtPin, button_rotenc, *data_keys, rotenc_logger)
+    
+    # For example - uncomment to see error/sys.exit due to duplicate devices
+    #device = "rotEnc2"
+    #lvl2 = 'rotencoder'
+    #data_keys = ['RotEnc2Ci', 'RotEnc2Bi']
+    #clkPin, dtPin, button_rotenc = 18, 26, 25
+    #setup_device(device, lvl2, data_keys)
+    #rotaryEncoderSet[device] = rotaryencoder.RotaryEncoder(clkPin, dtPin, button_rotenc, *data_keys, rotenc_logger)
+    print("\n")
+    
+
+    for logger in _loggers:
+        main_logger.info('{0} is set at level: {1}'.format(logger, logger.getEffectiveLevel()))
 
     #==== START/BIND MQTT FUNCTIONS ====#
     # Create a couple flags to handle a failed attempt at connecting. If user/password is wrong we want to stop the loop.
@@ -127,12 +233,12 @@ def main():
     mqtt_client.on_disconnect = on_disconnect             # Bind on disconnect
     mqtt_client.on_message = on_message    # Bind on message
     mqtt_client.on_publish = on_publish    # Bind on publish
-    logging.info("Connecting to: {0}".format(MQTT_SERVER))
+    main_logger.info("Connecting to: {0}".format(MQTT_SERVER))
     mqtt_client.connect(MQTT_SERVER, 1883) # Connect to mqtt broker. This is a blocking function. Script will stop while connecting.
     mqtt_client.loop_start()               # Start monitoring loop as asynchronous. Starts a new thread and will process incoming/outgoing messages.
     # Monitor if we're in process of connecting or if the connection failed
     while not mqtt_client.connected and not mqtt_client.failed_connection:
-        logging.info("Waiting")
+        main_logger.info("Waiting")
         sleep(1)
     if mqtt_client.failed_connection:      # If connection failed then stop the loop and main program. Use the rc code to trouble shoot
         mqtt_client.loop_stop()
@@ -142,17 +248,16 @@ def main():
     item = 'rotencoder'
     try:
         while True:
-            clicks = rotEnc1.runencoder()
-            if clicks is not None:
-                mqtt_outgoingD[item]['data']['RotEnc1Ci'] = str(clicks[0])
-                mqtt_outgoingD[item]['data']['RotEnc1Bi'] = str(clicks[1])
-                mqtt_client.publish(item.join(MQTT_PUB_TOPIC), json.dumps((mqtt_outgoingD[item]['data'])))
-                logging.info("clicks:{0}".format(clicks[0], clicks[1]))
+            for device, rotenc in rotaryEncoderSet.items():
+                deviceD[device]['data'] = rotenc.runencoder()
+                if deviceD[device]['data'] is not None:
+                    mqtt_client.publish(deviceD[device]['lvl2'].join(MQTT_PUB_TOPIC), json.dumps(deviceD[device]['data']))
     except KeyboardInterrupt:
-        logging.info("Pressed ctrl-C")
+        main_logger.info("Pressed ctrl-C")
     finally:
-        rotEnc1.cleanupGPIO()
-        logging.info("GPIO cleaned up")
+        for rotenc in rotaryEncoderSet.values():
+            rotenc.cleanupGPIO()
+            main_logger.info("GPIO cleaned up on {0}".format(rotenc))
 
 if __name__ == "__main__":
     # Run main loop            
