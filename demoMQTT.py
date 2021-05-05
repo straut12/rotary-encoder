@@ -3,6 +3,7 @@
 # noise threshold then the voltage from all channels will be returned.
 # MQTT version has a publish section in the main code to test MQTT ability stand alone
 import sys, json, logging, re
+import RPi.GPIO as GPIO
 from time import sleep
 import paho.mqtt.client as mqtt
 from os import path
@@ -12,15 +13,25 @@ import rotaryencoder
 
 class pcolor:
     ''' Add color to print statements '''
-    HEADER = '\033[95m'
-    OKBLUE = '\033[94m'
-    OKCYAN = '\033[96m'
-    OKGREEN = '\033[92m'
-    WARNING = '\033[93m'
-    FAIL = '\033[91m'
-    ENDC = '\033[0m'
+    LBLUE = '\33[36m'   # Close to CYAN
+    CYAN = '\033[96m'
+    BLUE = '\033[94m'
+    DBLUE = '\33[34m'
+    WOLB = '\33[46m'    # White On LightBlue
+    LPURPLE = '\033[95m'
+    PURPLE = '\33[35m'
+    WOP = '\33[45m'     # White On Purple
+    GREEN = '\033[92m'
+    DGREEN = '\33[32m'
+    WOG = '\33[42m'     # White On Green
+    YELLOW = '\033[93m'
+    YELLOW2 = '\33[33m'
+    RED = '\033[91m'
+    DRED = '\33[31m'
+    WOR = '\33[41m'     # White On Red
+    BOW = '\33[7m'      # Black On White
     BOLD = '\033[1m'
-    UNDERLINE = '\033[4m'
+    ENDC = '\033[0m'
 
 class CustomFormatter(logging.Formatter):
     """ Custom logging format with color """
@@ -54,10 +65,12 @@ def setup_logging(log_dir, logger_type, logger_name=__name__, log_level=logging.
                 # log_level and mode will determine output
                     #log_level, RFHmode|  logger.x() | output
                     #------------------|-------------|-----------
-                    #      INFO, 1     |  info       | print only
+                    #      INFO, 1     |  info       | print
                     #      INFO, 2     |  info       | print+logfile
+                    #      INFO, 3     |  info       | logfile
                     #      DEBUG,1     |  info+debug | print only
                     #      DEBUG,2     |  info+debug | print+logfile
+                    #      DEBUG,3     |  info+debug | logfile
 
     if logger_type == 'basic':
         if len(logging.getLogger().handlers) == 0:       # Root logger does not already exist, will create it
@@ -68,16 +81,22 @@ def setup_logging(log_dir, logger_type, logger_name=__name__, log_level=logging.
     else:
         if mode == 1:
             logfile_log_level = logging.CRITICAL
+            console_log_level = log_level
         elif mode == 2:
-            logfile_log_level = logging.DEBUG
+            logfile_log_level = log_level
+            console_log_level = log_level
+        elif mode == 3:
+            logfile_log_level = log_level
+            console_log_level = logging.CRITICAL
 
         custom_logger = logging.getLogger(logger_name)
+        custom_logger.propagate = False
         custom_logger.setLevel(log_level)
         log_file_format = logging.Formatter("[%(levelname)s] - %(asctime)s - %(name)s - : %(message)s in %(pathname)s:%(lineno)d")
-        log_console_format = logging.Formatter("[%(levelname)s]: %(message)s")
+        #log_console_format = logging.Formatter("[%(levelname)s]: %(message)s") # Using CustomFormatter Class
 
         console_handler = logging.StreamHandler()
-        console_handler.setLevel(log_level)
+        console_handler.setLevel(console_log_level)
         console_handler.setFormatter(CustomFormatter())
 
         log_file_handler = RotatingFileHandler('{}/debug.log'.format(log_dir), maxBytes=10**6, backupCount=5) # 1MB file
@@ -121,8 +140,8 @@ def on_disconnect(client, userdata,rc=0):
     mqtt_client.loop_stop()
 
 def mqtt_setup(IPaddress):
-    global MQTT_SERVER, MQTT_CLIENT_ID, MQTT_USER, MQTT_PASSWORD, MQTT_SUB_TOPIC, MQTT_PUB_TOPIC, SUBLVL1, MQTT_REGEX
-    global mqtt_client, mqtt_outgoingD, device
+    global MQTT_SERVER, MQTT_CLIENT_ID, MQTT_USER, MQTT_PASSWORD, MQTT_SUB_TOPIC, MQTT_PUB_LVL1, MQTT_SUB_LVL1, MQTT_REGEX
+    global mqtt_client
     home = str(Path.home())                       # Import mqtt and wifi info. Remove if hard coding in python script
     with open(path.join(home, "stem"),"r") as f:
         user_info = f.read().splitlines()
@@ -130,21 +149,18 @@ def mqtt_setup(IPaddress):
     MQTT_USER = user_info[0]                   # Replace with your mqtt user ID
     MQTT_PASSWORD = user_info[1]               # Replace with your mqtt password
 
-    # SUBSCRIBE: Specific MQTT_SUB_TOPICS created inside 'setup_device' function
+    # Specific MQTT SUBSCRIBE/PUBLISH TOPICS created inside 'setup_device' function
     MQTT_SUB_TOPIC = []
-    SUBLVL1 = 'nred2' + MQTT_CLIENT_ID
+    MQTT_SUB_LVL1 = 'nred2' + MQTT_CLIENT_ID
+    MQTT_PUB_LVL1 = 'pi2nred/'
 
-    # PUBLISH: Specific MQTT_PUB_TOPICS created at time of publishing using string.join    
-    MQTT_PUB_TOPIC = []
-    MQTT_PUB_TOPIC = ['pi2nred/', '/' + MQTT_CLIENT_ID]
-
-def setup_device(device, lvl2, data_keys):
-    global printcolor, deviceD, SUBLVL1, main_logger
+def setup_device(device, lvl2, publvl3, data_keys):
+    global printcolor, deviceD
     if deviceD.get(device) == None:
         deviceD[device] = {}
         deviceD[device]['data'] = {}
         deviceD[device]['lvl2'] = lvl2 # Sub/Pub lvl2 in topics. Does not have to be unique, can piggy-back on another device lvl2
-        topic = f"{SUBLVL1}/{deviceD[device]['lvl2']}ZCMD/+"
+        topic = f"{MQTT_SUB_LVL1}/{deviceD[device]['lvl2']}ZCMD/+"
         if topic not in MQTT_SUB_TOPIC:
             MQTT_SUB_TOPIC.append(topic)
             for key in data_keys:
@@ -155,21 +171,24 @@ def setup_device(device, lvl2, data_keys):
                     if deviceD[item]['data'].get(key) != None:
                         main_logger.warning(f"**DUPLICATE WARNING {device} and {item} are both publishing {key} on {topic}")
                 deviceD[device]['data'][key] = 0
+        deviceD[device]['pubtopic'] = MQTT_PUB_LVL1 + lvl2 + '/' + publvl3
         deviceD[device]['send'] = False
         printcolor = not printcolor # change color of every other print statement
         if printcolor: 
-            main_logger.info(f"{pcolor.OKBLUE}{device}{pcolor.ENDC} Subscribing to: {pcolor.OKBLUE}{topic}{pcolor.ENDC}")
-            main_logger.info(f"   JSON payload keys will be:{pcolor.OKBLUE}{*deviceD[device]['data'],}{pcolor.ENDC}")
+            main_logger.info(f"{pcolor.LBLUE}{device} Subscribing to: {topic}{pcolor.ENDC}")
+            main_logger.info(f"{pcolor.DBLUE}{device} Publishing  to: {deviceD[device]['pubtopic']}{pcolor.ENDC}")
+            main_logger.info(f"JSON payload keys will be:{pcolor.WOLB}{*deviceD[device]['data'],}{pcolor.ENDC}")
         else:
-            main_logger.info(f"{pcolor.OKGREEN}{device}{pcolor.ENDC} Subscribing to: {pcolor.OKGREEN}{topic}{pcolor.ENDC}")
-            main_logger.info(f"   JSON payload keys will be:{pcolor.OKGREEN}{*deviceD[device]['data'],}{pcolor.ENDC}")
+            main_logger.info(f"{pcolor.PURPLE}{device} Subscribing to: {topic}{pcolor.ENDC}")
+            main_logger.info(f"{pcolor.LPURPLE}{device} Publishing  to: {deviceD[device]['pubtopic']}{pcolor.ENDC}")
+            main_logger.info(f"JSON payload keys will be:{pcolor.WOP}{*deviceD[device]['data'],}{pcolor.ENDC}")
     else:
         main_logger.error(f"Device {device} already in use. Device name should be unique")
-        sys.exit(f"{pcolor.FAIL}Device {device} already in use. Device name should be unique{pcolor.ENDC}")
+        sys.exit(f"{pcolor.RED}Device {device} already in use. Device name should be unique{pcolor.ENDC}")
 
 def main():
     global deviceD, printcolor             # Containers setup in 'create' functions and used for Publishing mqtt
-    global MQTT_SERVER, MQTT_USER, MQTT_PASSWORD, MQTT_CLIENT_ID, mqtt_client, MQTT_PUB_TOPIC
+    global MQTT_SERVER, MQTT_USER, MQTT_PASSWORD, MQTT_CLIENT_ID, mqtt_client, MQTT_PUB_LVL1
     global _loggers, main_logger, mqtt_logger
 
     main_logger_level= logging.DEBUG # CRITICAL=logging off. DEBUG=get variables. INFO=status messages.
@@ -194,31 +213,29 @@ def main():
 
     printcolor = True
     deviceD = {}  # Primary container for storing all devices, topics, and data
-                  # Device name should be unique, can not duplicate device ID
-                  # Topic lvl2 name can be a duplicate, meaning multiple devices publishing data on the same topic
-                  # If topic lvl2 name repeats would likely want the data_keys to be unique
     
     #==== HARDWARE SETUP =====#
     rotaryEncoderSet = {}
-    rotenc_logger = setup_logging(path.dirname(path.abspath(__file__)), 'custom', 'rotenc', log_level=logging.DEBUG, mode=1)
+    rotenc_logger = setup_logging(path.dirname(path.abspath(__file__)), 'custom', 'rotenc', log_level=logging.DEBUG, mode=2)
 
     device = "rotEnc1"  # Device name should be unique, can not duplicate device ID
     lvl2 = 'rotencoder' # Topic lvl2 name can be a duplicate, meaning multiple devices publishing data on the same topic
+    publvl3 = MQTT_CLIENT_ID + "" # Will be a tag in influxdb. Optional to modify it and describe experiment being ran
     data_keys = ['RotEnc1Ci', 'RotEnc1Bi'] # If topic lvl2 name repeats would likely want the data_keys to be unique
     clkPin, dtPin, button_rotenc = 17, 27, 24
-    setup_device(device, lvl2, data_keys)
+    setup_device(device, lvl2, publvl3, data_keys)
     rotaryEncoderSet[device] = rotaryencoder.RotaryEncoder(clkPin, dtPin, button_rotenc, *data_keys, rotenc_logger)
     
     # For example - uncomment to see error/sys.exit due to duplicate devices
     #device = "rotEnc2"
     #lvl2 = 'rotencoder'
+    #publvl3 = MQTT_CLIENT_ID + "Test2" # Will be a tag in influxdb. Optional to modify it and describe experiment being ran
     #data_keys = ['RotEnc2Ci', 'RotEnc2Bi']
     #clkPin, dtPin, button_rotenc = 18, 26, 25
     #setup_device(device, lvl2, data_keys)
     #rotaryEncoderSet[device] = rotaryencoder.RotaryEncoder(clkPin, dtPin, button_rotenc, *data_keys, rotenc_logger)
-    print("\n")
-    
 
+    print("\n")
     for logger in _loggers:
         main_logger.info('{0} is set at level: {1}'.format(logger, logger.getEffectiveLevel()))
 
@@ -240,24 +257,22 @@ def main():
     while not mqtt_client.connected and not mqtt_client.failed_connection:
         main_logger.info("Waiting")
         sleep(1)
-    if mqtt_client.failed_connection:      # If connection failed then stop the loop and main program. Use the rc code to trouble shoot
+    if mqtt_client.failed_connection:
         mqtt_client.loop_stop()
-        sys.exit()
+        sys.exit(f"{pcolor.RED}Connection failed. Use rc code to trouble shoot{pcolor.ENDC}")
 
     #==== MAIN LOOP ====================#
-    item = 'rotencoder'
     try:
         while True:
             for device, rotenc in rotaryEncoderSet.items():
                 deviceD[device]['data'] = rotenc.runencoder()
                 if deviceD[device]['data'] is not None:
-                    mqtt_client.publish(deviceD[device]['lvl2'].join(MQTT_PUB_TOPIC), json.dumps(deviceD[device]['data']))
+                    mqtt_client.publish(deviceD[device]['pubtopic'], json.dumps(deviceD[device]['data']))
     except KeyboardInterrupt:
-        main_logger.info("Pressed ctrl-C")
+        main_logger.info(f"{pcolor.YELLOW}Exit with ctrl-C{pcolor.ENDC}")
     finally:
-        for rotenc in rotaryEncoderSet.values():
-            rotenc.cleanupGPIO()
-            main_logger.info("GPIO cleaned up on {0}".format(rotenc))
+        GPIO.cleanup()
+        main_logger.info(f"{pcolor.CYAN}GPIO cleaned up{pcolor.ENDC}")
 
 if __name__ == "__main__":
     # Run main loop            

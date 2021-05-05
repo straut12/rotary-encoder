@@ -55,9 +55,6 @@ class RotaryEncoder:
         self.outgoing[self.og_button] = buttonstate
         self.logger.debug(self.outgoing)
         return self.outgoing
-
-  def cleanupGPIO(self):
-    GPIO.cleanup()
   
   def _button_callback(self, channel):
     self.buttonpressed = True
@@ -104,6 +101,6 @@ if __name__ == "__main__":
   except KeyboardInterrupt:
     logging.info("Pressed ctrl-C")
   finally:
-    rotEnc1.cleanupGPIO()
+    GPIO.cleanup()
     logging.info("GPIO cleaned up")
 
