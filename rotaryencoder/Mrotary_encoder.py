@@ -38,7 +38,7 @@ class RotaryEncoder:
     GPIO.add_event_detect(self.button, GPIO.BOTH, callback=self._button_callback)
     self.logger.info('Rotary Encoder pins- clk:{0} data:{1} button:{2}'.format(self.clkPin, self.dtPin, self.button))
 
-  def runencoder(self):
+  def getdata(self):
     self.clkState = GPIO.input(self.clkPin)
     self.dtState = GPIO.input(self.dtPin)
     if self.clkState != self.clkLastState or self.buttonpressed:
@@ -97,7 +97,7 @@ if __name__ == "__main__":
   
   try:
     while True:
-      clicks = rotEnc1.runencoder()
+      clicks = rotEnc1.getdata()
   except KeyboardInterrupt:
     logging.info("Pressed ctrl-C")
   finally:
