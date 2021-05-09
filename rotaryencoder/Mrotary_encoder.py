@@ -11,15 +11,15 @@ import logging
 import RPi.GPIO as GPIO
 
 class RotaryEncoder:
-  def __init__(self, clkPin, dtPin, button, key1='RotEncCi', key2='RotEncBi', mlogger=None):
+  def __init__(self, clkPin, dtPin, button, key1='RotEncCi', key2='RotEncBi', logger=None):
     self.clkPin = clkPin
     self.dtPin = dtPin
     self.button = button
     self.outgoing = {}
     self.og_counter = key1
     self.og_button = key2
-    if mlogger is not None:                        # Use logger passed as argument
-      self.logger = mlogger
+    if logger is not None:                        # Use logger passed as argument
+      self.logger = logger
     elif len(logging.getLogger().handlers) == 0:   # Root logger does not exist and no custom logger passed
       logging.basicConfig(level=logging.INFO)      # Create root logger
       self.logger = logging.getLogger(__name__)    # Create from root logger
