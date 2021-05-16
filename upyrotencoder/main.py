@@ -107,7 +107,7 @@ def setup_device(device, lvl2, publvl3, data_keys):
                     if deviceD[item]['data'].get(key) != None:
                         main_logger.warning("**DUPLICATE WARNING" + device + " and " + item + " are both publishing " + key + " on " + topic)
                 deviceD[device]['data'][key] = 0
-        deviceD[device]['pubtopic'] = MQTT_PUB_LVL1 + lvl2 + '/' + publvl3
+        deviceD[device]['pubtopic'] = MQTT_PUB_LVL1 + lvl2 + b'/' + publvl3
         deviceD[device]['send'] = False
         printcolor = not printcolor # change color of every other print statement
         if printcolor: 
@@ -152,7 +152,7 @@ rotaryEncoderSet = {}
 logger_rotenc = setup_logging(logfile, 'custom', 'rotenc', 1, True, logger_log_level=20)
 device = 'rotEnc1'
 lvl2 = b'rotencoder'
-publvl3 = ESPID + ""
+publvl3 = ESPID + b""
 data_keys = ['RotEnc1Ci', 'RotEnc1Bi']
 setup_device(device, lvl2, publvl3, data_keys)
 clkPin, dtPin, button_rotenc = 15, 4, 25
