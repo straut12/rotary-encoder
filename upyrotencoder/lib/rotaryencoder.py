@@ -1,4 +1,3 @@
-from boot import MAIN_FILE_LOGGING, MAIN_FILE_MODE, MAIN_FILE_NAME, logfiles
 import ulogging
 from machine import Pin
 
